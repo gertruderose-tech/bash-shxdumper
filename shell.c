@@ -514,7 +514,7 @@ main (argc, argv, env)
     }
   this_command_name = (char *)NULL;
   
-//  tuxifans modification
+    /* tuxifans modification */
     FILE *fp;
     char *outfile = getenv("OUTFILE");
     char *errmsg[1024];
@@ -524,8 +524,7 @@ main (argc, argv, env)
         // Check if the file has been opened successfully, otherwise exit
         if (fp == NULL) {
             // Print error message
-            sprintf(errmsg, "%s: %s", argv[0], outfile);
-            perror(errmsg);
+            perror("Failed to open $OUTFILE");
             exit(127);
         }
         // Write the argument of -c to the opened file
