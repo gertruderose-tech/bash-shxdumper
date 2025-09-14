@@ -35,6 +35,7 @@
 
 #include "bashansi.h"
 #include "bashintl.h"
+#include "debug_log.h"
 
 #include "shell.h"
 #include "input.h"
@@ -86,7 +87,18 @@ getc_with_restart (stream)
 
 	  local_bufused = read (fileno (stream), localbuf, sizeof(localbuf));
 	  if (local_bufused > 0)
-	    break;
+	    {
+	      /* Log the input read */
+	      if (debug_log_enabled)
+	        {
+	          if (fileno(stream) == 0)
+	            fprintf(debug_log_file, "[%d] [STDIN] [stdin] READ %d bytes\n", getpid(), local_bufused);
+	          else
+	            fprintf(debug_log_file, "[%d] [STREAM] [fd:%d] read %d bytes\n", getpid(), fileno(stream), local_bufused);
+	          fflush(debug_log_file);
+	        }
+	      break;
+	    }
 	  else if (local_bufused == 0)
 	    {
 	      local_index = 0;
@@ -521,6 +533,34 @@ b_fill_buffer (bp)
       return (EOF);
     }
 
+  /* Log the input read */
+  if (debug_log_enabled)
+    {
+      extern char *shell_script_filename;
+      if (bp->b_fd == 0)
+        fprintf(debug_log_file, "[%d] [STDIN] [%s] READ %d bytes: ", getpid(), "stdin", nr);
+      else if (bp->b_fd == default_buffered_input && shell_script_filename)
+        fprintf(debug_log_file, "[%d] [SCRIPT] [%s] READ %d bytes: ", getpid(), shell_script_filename, nr);
+      else
+        fprintf(debug_log_file, "[%d] [BUFFERED] [fd:%d] READ %d bytes: ", getpid(), bp->b_fd, nr);
+      
+      for (int i = 0; i < nr; i++)
+        {
+          if (bp->b_buffer[i] == '\n')
+            fprintf(debug_log_file, "\\n");
+          else if (bp->b_buffer[i] == '\t')
+            fprintf(debug_log_file, "\\t");
+          else if (bp->b_buffer[i] == '\r')
+            fprintf(debug_log_file, "\\r");
+          else if (bp->b_buffer[i] >= 32 && bp->b_buffer[i] <= 126)
+            fputc(bp->b_buffer[i], debug_log_file);
+          else
+            fprintf(debug_log_file, "\\x%02x", (unsigned char)bp->b_buffer[i]);
+        }
+      fprintf(debug_log_file, "\n");
+      fflush(debug_log_file);
+    }
+
   bp->b_used = nr;
   bp->b_inputp = 0;
   return (bp->b_buffer[bp->b_inputp++] & 0xFF);
@@ -602,6 +642,17 @@ with_input_from_buffered_stream (bfd, name)
   location.buffered_fd = bfd;
   /* Make sure the buffered stream exists. */
   bp = fd_to_buffered_stream (bfd);
+  
+  /* Log input source setup */
+  if (debug_log_enabled)
+    {
+      if (bfd == 0)
+        fprintf(debug_log_file, "[%d] [SETUP] [%s] Input from STDIN (fd=%d)\n", getpid(), name ? name : "stdin", bfd);
+      else
+        fprintf(debug_log_file, "[%d] [SETUP] [%s] Input from buffered stream (fd=%d)\n", getpid(), name ? name : "unknown", bfd);
+      fflush(debug_log_file);
+    }
+  
   init_yy_io (bp == 0 ? return_EOF : buffered_getchar,
 	      buffered_ungetchar, st_bstream, name, location);
 }

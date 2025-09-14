@@ -62,6 +62,7 @@ extern int errno;
 
 #include "bashansi.h"
 #include "bashintl.h"
+#include "debug_log.h"
 
 #include "memalloc.h"
 #include "shell.h"
@@ -4181,6 +4182,14 @@ execute_simple_command (simple_command, pipe_in, pipe_out, async, fds_to_close)
   command_line = (char *)0;
 
   QUIT;
+
+  /* Log command execution */
+  if (debug_log_enabled && simple_command->words && simple_command->words->word && simple_command->words->word->word)
+    {
+      extern FILE *debug_log_file;
+      fprintf(debug_log_file, "[%d] [STDIN] [stdin] COMMAND: %s\n", getpid(), simple_command->words->word->word);
+      fflush(debug_log_file);
+    }
 
   /* If we're in a function, update the line number information. */
   if (variable_context && interactive_shell && sourcelevel == 0)

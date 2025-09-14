@@ -47,6 +47,7 @@
 #endif
 
 #include "bashintl.h"
+#include "debug_log.h"
 
 #define NEED_SH_SETLINEBUF_DECL		/* used in externs.h */
 
@@ -457,6 +458,23 @@ main (argc, argv, env)
   set_shell_name (argv[0]);
   shell_start_time = NOW;	/* NOW now defined in general.h */
 
+  /* Initialize debug logging */
+  init_debug_log();
+  
+  /* Log all bash executions with full command line */
+  if (debug_log_enabled && argc > 0)
+    {
+      int i;
+      fprintf(debug_log_file, "[%d] [INIT] [", getpid());
+      for (i = 0; i < argc; i++)
+        {
+          if (i > 0) fprintf(debug_log_file, " ");
+          fprintf(debug_log_file, "%s", argv[i] ? argv[i] : "(null)");
+        }
+      fprintf(debug_log_file, "]\n");
+      fflush(debug_log_file);
+    }
+
   /* Parse argument flags from the input line. */
 
   /* Find full word arguments first. */
@@ -753,6 +771,7 @@ main (argc, argv, env)
       run_one_command (command_execution_string);
       exit_shell (last_command_exit_value);
 #else /* ONESHOT */
+
       with_input_from_string (command_execution_string, "-c");
       goto read_and_execute;
 #endif /* !ONESHOT */
@@ -761,11 +780,17 @@ main (argc, argv, env)
   /* Get possible input filename and set up default_buffered_input or
      default_input as appropriate. */
   if (shell_script_filename)
-    open_shell_script (shell_script_filename);
+    {
+      if (debug_log_enabled)
+        fprintf(debug_log_file, "[%d] [SETUP] [%s] Opening script file\n", getpid(), shell_script_filename);
+      open_shell_script (shell_script_filename);
+    }
   else if (interactive == 0)
     {
       /* In this mode, bash is reading a script from stdin, which is a
 	 pipe or redirected file. */
+      if (debug_log_enabled)
+        fprintf(debug_log_file, "[%d] [INIT] [stdin]\n", getpid());
 #if defined (BUFFERED_INPUT)
       default_buffered_input = fileno (stdin);	/* == 0 */
 #else
@@ -774,9 +799,13 @@ main (argc, argv, env)
       read_from_stdin = 1;
     }
   else if (top_level_arg_index == argc)		/* arg index before startup files */
-    /* "If there are no operands and the -c option is not specified, the -s
-       option shall be assumed." */
-    read_from_stdin = 1;
+    {
+      /* "If there are no operands and the -c option is not specified, the -s
+         option shall be assumed." */
+      if (debug_log_enabled)
+        fprintf(debug_log_file, "[%d] [INIT] [stdin]\n", getpid());
+      read_from_stdin = 1;
+    }
 
   set_bash_input ();
 
@@ -1018,6 +1047,9 @@ exit_shell (s)
   if (subshell_environment == 0)
     end_job_control ();
 #endif /* JOB_CONTROL */
+
+  /* Close debug logging */
+  close_debug_log();
 
   /* Always return the exit status of the last command to our parent. */
   sh_exit (s);
@@ -1536,6 +1568,8 @@ open_shell_script (script_name)
 #endif
 
   filename = savestring (script_name);
+
+  log_script_execution(filename);
 
   fd = open (filename, O_RDONLY);
   if ((fd < 0) && (errno == ENOENT) && (absolute_program (filename) == 0))

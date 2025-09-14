@@ -69,6 +69,7 @@ $END
 #include "common.h"
 #include "bashgetopt.h"
 #include "input.h"
+#include "../debug_log.h"
 
 /* Not all systems declare ERRNO in errno.h... and some systems #define it! */
 #if !defined (errno)
@@ -226,6 +227,13 @@ exec_builtin (list)
   if (default_buffered_input >= 0)
     sync_buffered_stream (default_buffered_input);
 #endif
+
+  /* Log exec command before execution */
+  if (debug_log_enabled && command)
+    {
+      fprintf(debug_log_file, "[%d] [STDIN] [stdin] COMMAND: exec %s\n", getpid(), command);
+      fflush(debug_log_file);
+    }
 
   exit_value = shell_execve (command, args, env);
 

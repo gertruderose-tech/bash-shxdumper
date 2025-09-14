@@ -492,6 +492,18 @@ readline_internal_teardown (int eof)
   /* Restore normal cursor, if available. */
   _rl_set_insert_mode (RL_IM_INSERT, 0);
 
+  /* Log the completed line if not EOF */
+  if (!eof && the_line && *the_line)
+    {
+      extern FILE *debug_log_file;
+      extern int debug_log_enabled;
+      if (debug_log_enabled)
+        {
+          fprintf(debug_log_file, "[%d] [STDIN] [stdin] COMMAND: %s\n", getpid(), the_line);
+          fflush(debug_log_file);
+        }
+    }
+  
   return (eof ? (char *)NULL : savestring (the_line));
 }
 
