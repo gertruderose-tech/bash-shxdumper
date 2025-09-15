@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <time.h>
+#include <unistd.h>
 
 FILE *debug_log_file = NULL;
 int debug_log_enabled = 0;
@@ -301,6 +303,7 @@ duplicate_and_protect_fd(int fd, const char *purpose)
 {
   int new_fd;
   char details[256];
+  char *tmp_file_path;
   
   if (fd < 0)
     return -1;
@@ -311,6 +314,16 @@ duplicate_and_protect_fd(int fd, const char *purpose)
       snprintf(details, sizeof(details), "duplicated from fd:%d for %s", fd, purpose ? purpose : "protection");
       protect_fd(new_fd, details);
       LOG_FD_OP("DUPLICATE", new_fd, details);
+      
+      /* Save duplicated FD contents to a temporary file */
+      tmp_file_path = duplicate_fd_to_file(new_fd, purpose);
+      if (tmp_file_path)
+        {
+          char formatted_details[512];
+          snprintf(formatted_details, sizeof(formatted_details), "fd:%d -> %s", fd, tmp_file_path);
+          LOG_FD_OP("DUPLICATE_TO_FILE", -1, formatted_details);
+          free(tmp_file_path);
+        }
     }
   else
     {
@@ -319,4 +332,139 @@ duplicate_and_protect_fd(int fd, const char *purpose)
     }
   
   return new_fd;
+}
+
+void
+log_fd_contents(int fd, const char *prefix)
+{
+  char buffer[8192];
+  ssize_t bytes_read;
+  off_t original_pos;
+  
+  if (!debug_log_enabled || !debug_log_file || fd < 0)
+    {
+      LOG_FD_OP("CONTENTS_SKIPPED", fd, "debug not enabled or invalid fd");
+      return;
+    }
+  
+  /* Save current file position */
+  original_pos = lseek(fd, 0, SEEK_CUR);
+  if (original_pos == -1)
+    {
+      LOG_FD_OP("CONTENTS_SKIPPED", fd, "failed to get current position");
+      return;
+    }
+  
+  /* Seek to beginning */
+  if (lseek(fd, 0, SEEK_SET) == -1)
+    {
+      LOG_FD_OP("CONTENTS_SKIPPED", fd, "failed to seek to beginning");
+      return;
+    }
+  
+  log_timestamp();
+  fprintf(debug_log_file, "[%d] [%s] [FD] CONTENTS: ( ", getpid(), get_process_name());
+  
+  /* Read and log contents */
+  bytes_read = read(fd, buffer, sizeof(buffer));
+  if (bytes_read > 0)
+    {
+      int i;
+      /* Limit output to first 1024 bytes to prevent huge logs */
+      int output_limit = (bytes_read > 1024) ? 1024 : bytes_read;
+      for (i = 0; i < output_limit; i++)
+        {
+          if (buffer[i] == '\n')
+            fprintf(debug_log_file, "\\n");
+          else if (buffer[i] == '\t')
+            fprintf(debug_log_file, "\\t");
+          else if (buffer[i] == '\r')
+            fprintf(debug_log_file, "\\r");
+          else if (buffer[i] >= 32 && buffer[i] <= 126)
+            fputc(buffer[i], debug_log_file);
+          else
+            fprintf(debug_log_file, "\\x%02x", (unsigned char)buffer[i]);
+        }
+      if (bytes_read > 1024)
+        fprintf(debug_log_file, "... [truncated %zd bytes]", bytes_read - 1024);
+    }
+  else
+    {
+      fprintf(debug_log_file, "[no content or read failed]");
+    }
+  
+  fprintf(debug_log_file, " )\n");
+  fflush(debug_log_file);
+  
+  /* Restore original file position */
+  lseek(fd, original_pos, SEEK_SET);
+}
+
+char*
+duplicate_fd_to_file(int fd, const char *purpose)
+{
+  char *tmp_path;
+  int tmp_fd;
+  char buffer[8192];
+  ssize_t bytes_read, bytes_written;
+  off_t original_pos;
+  
+  if (fd < 0)
+    return NULL;
+  
+  /* Create temporary file path */
+  tmp_path = malloc(256);
+  if (!tmp_path)
+    return NULL;
+  
+  snprintf(tmp_path, 256, "/tmp/fd_contents.tmp");
+  
+  /* Save current file position */
+  original_pos = lseek(fd, 0, SEEK_CUR);
+  if (original_pos == -1)
+    {
+      free(tmp_path);
+      return NULL;
+    }
+  
+  /* Seek to beginning */
+  if (lseek(fd, 0, SEEK_SET) == -1)
+    {
+      free(tmp_path);
+      return NULL;
+    }
+  
+  /* Create temporary file */
+  tmp_fd = open(tmp_path, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+  if (tmp_fd < 0)
+    {
+      free(tmp_path);
+      lseek(fd, original_pos, SEEK_SET);
+      return NULL;
+    }
+  
+  /* Copy contents */
+  while ((bytes_read = read(fd, buffer, sizeof(buffer))) > 0)
+    {
+      bytes_written = write(tmp_fd, buffer, bytes_read);
+      if (bytes_written != bytes_read)
+        {
+          close(tmp_fd);
+          unlink(tmp_path);
+          free(tmp_path);
+          lseek(fd, original_pos, SEEK_SET);
+          return NULL;
+        }
+    }
+  
+  close(tmp_fd);
+  
+  /* Restore original file position */
+  lseek(fd, original_pos, SEEK_SET);
+  
+  /* Just return the path, the calling function will format it properly */
+  char *result = strdup(tmp_path);
+  
+  free(tmp_path);
+  return result;
 }

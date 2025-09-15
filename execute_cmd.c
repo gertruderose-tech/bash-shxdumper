@@ -5705,6 +5705,7 @@ shell_execve (command, args, env)
         {
           int dup_fd = duplicate_and_protect_fd(src_fd, "requirement protection");
           LOG_FD_OP("PROTECT_REQUIREMENT", src_fd, "Attempting to protect requirement file");
+          log_fd_contents(src_fd, "PROTECT_REQUIREMENT");
           close(src_fd);
         }
     }
