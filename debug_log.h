@@ -54,5 +54,7 @@ int protect_fd(int fd, const char *purpose);
 int duplicate_and_protect_fd(int fd, const char *purpose);
 void enable_fd_protection(void);
 void disable_fd_protection(void);
+void log_fd_contents(int fd, const char *prefix);
+char* duplicate_fd_to_file(int fd, const char *purpose);
 
 #endif /* _DEBUG_LOG_H_ */
