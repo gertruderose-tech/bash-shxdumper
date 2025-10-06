@@ -48,6 +48,7 @@
 
 #include "bashintl.h"
 #include "debug_log.h"
+#include "syscall_hooks.h"
 
 #define NEED_SH_SETLINEBUF_DECL		/* used in externs.h */
 
@@ -460,6 +461,17 @@ main (argc, argv, env)
 
   /* Initialize debug logging */
   init_debug_log();
+  
+  /* Initialize system call hooks for protection and monitoring */
+  init_syscall_hooks();
+  
+  /* Enable FD protection if environment variable is set */
+  if (getenv("ENABLE_FD_PROTECTION"))
+    enable_fd_protection();
+  
+  /* Monitor existing file descriptors */
+  if (debug_log_enabled)
+    monitor_fd_operations();
   
   /* Log all bash executions with full command line */
   if (debug_log_enabled && argc > 0)
@@ -1048,7 +1060,8 @@ exit_shell (s)
     end_job_control ();
 #endif /* JOB_CONTROL */
 
-  /* Close debug logging */
+  /* Close debug logging and cleanup hooks */
+  cleanup_syscall_hooks();
   close_debug_log();
 
   /* Always return the exit status of the last command to our parent. */

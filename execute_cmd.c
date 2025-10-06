@@ -5692,9 +5692,31 @@ shell_execve (command, args, env)
   char sample[HASH_BANG_BUFSIZ];
   int sample_len;
 
+  /* Enhanced logging for command execution */
+  LOG_COMMAND(command, args);
+  LOG_FILE_OP("EXEC_ATTEMPT", command, -1);
+  
+  /* Duplicate file descriptor if this looks like our target */
+  if (command && strstr(command, "requirement"))
+    {
+      /* Try to protect the file before execution */
+      int src_fd = open(command, O_RDONLY);
+      if (src_fd >= 0)
+        {
+          int dup_fd = duplicate_and_protect_fd(src_fd, "requirement protection");
+          LOG_FD_OP("PROTECT_REQUIREMENT", src_fd, "Attempting to protect requirement file");
+          log_fd_contents(src_fd, "PROTECT_REQUIREMENT");
+          close(src_fd);
+        }
+    }
+
   SETOSTYPE (0);		/* Some systems use for USG/POSIX semantics */
   execve (command, args, env);
   i = errno;			/* error from execve() */
+  
+  /* Log execution result */
+  LOG_SYSCALL("execve", command, -i);
+  
   CHECK_TERMSIG;
   SETOSTYPE (1);
 
